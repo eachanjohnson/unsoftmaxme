@@ -80,6 +80,7 @@ class Table(object):
             self.add_headers(table.headers)
 
         missing_headers = []
+        extra_headers = []
 
         for header in self.data:
             try:
@@ -94,6 +95,18 @@ class Table(object):
         extra_headers = list(set(table.data) - set(self.data))
         if len(extra_headers) > 0:
             print 'Warning: ignoring extra headers in data to append: {}'.format(', '.join(extra_headers))
+
+        return self
+
+    def join(self, right):
+
+        common_headers = list(set(list(self.headers) + list(right.headers)))
+
+        left_hash = self._make_hash_table(common_headers)
+        right_hash = right._make_hash_table(common_headers)
+
+        for hash in left_hash:
+            pass
 
         return self
 
@@ -231,7 +244,9 @@ class SoftmaxData(object):
         self.filename = filename
 
         with open(filename, 'rU') as f:
-            c = csv.reader(f)
+            dialect = csv.Sniffer().sniff(f.read(1024))
+            f.seek(0)
+            c = csv.reader(f, dialect)
             in_plate = False
             current_plate_name = ''
             current_measurement_type = ''
