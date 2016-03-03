@@ -4,13 +4,14 @@ __author__ = 'Eachan Johnson'
 
 __doc__ = '''
 Usage:  unsoftmaxme.py (--help | --version)
-        unsoftmaxme.py -o <output> <files>...
+        unsoftmaxme.py [-m <metadataFileList>] -o <output> <files>...
 
 Options:
---help, -h                          Show this message and exit
---version                           Show version number and exit
--o <output>, --output <output>      Filename to use for output
-<files>...                          Data files from SoftMax in CSV format
+--help, -h                                          Show this message and exit
+--version                                           Show version number and exit
+-m <metadataFileList>, --meta <metadataFileList>    CSV with one filename per row, indicating location of metadata to join to final table
+-o <output>, --output <output>                      Filename to use for output
+<files>...                                          Data files from SoftMax in CSV format
 '''
 
 import csv
@@ -23,9 +24,66 @@ import string
 class Table(object):
 
     def __init__(self):
+        self.filename = None
         self.headers = None
         self.data = {}
         self.dimensions = (0, 0)
+
+    def _make_hash_table(self, header_list):
+
+        key_table = self.data.copy()
+
+        key_table['hash'] = ['_'.join([str(key_table[header][n]) for header in sorted(header_list)]) for
+                             n, _ in enumerate(key_table[header_list[0]])]
+
+        unique_hashes = list(set(key_table['hash']))
+
+        hash_table = {unique_hash: [] for unique_hash in unique_hashes}
+
+        for hash in hash_table:
+            rows_for_this_hash = [n for n, key in enumerate(key_table['hash']) if key == hash]
+            dict_to_add = [{header: key_table[header][row_number] for header in key_table if header is not 'hash'}
+                           for row_number in rows_for_this_hash]
+            hash_table[hash] = dict_to_add
+
+        return hash_table
+
+    def _merge_hash_tables(self, left_hash, right_hash):
+
+        final_hash = {}
+
+        for hash in left_hash:
+
+            try:
+                data_to_add = right_hash[hash]
+            except KeyError:
+                pass
+            else:
+                for left_row in left_hash[hash]:
+                    for right_row in data_to_add:
+                        row_to_add = left_row.copy()
+                        row_to_add.update(right_row)
+                        try:
+                            final_hash[hash].append(row_to_add)
+                        except KeyError:
+                            final_hash[hash] = [row_to_add]
+
+        return final_hash
+
+    def _hash_to_data(self, hash_table):
+
+        data_table = {}
+
+        for hash in hash_table:
+            #print hash, hash_table[hash]
+            for row in hash_table[hash]:
+                for header in row:
+                    try:
+                        data_table[header].append(row[header])
+                    except KeyError:
+                        data_table[header] = [row[header]]
+
+        return data_table
 
     def add_headers(self, headers):
 
@@ -74,6 +132,20 @@ class Table(object):
 
         return self
 
+    def from_csv(self, filename):
+
+        self.filename = filename
+
+        with open(filename, 'rU') as f:
+            c = csv.reader(f)
+            for n, row in enumerate(c):
+                if n > 0:
+                    self.add_row(row)
+                else:
+                    self.add_headers(row)
+
+        return self
+
     def append(self, table):
 
         if self.headers is None:
@@ -100,13 +172,19 @@ class Table(object):
 
     def join(self, right):
 
-        common_headers = list(set(list(self.headers) + list(right.headers)))
+        common_headers = [header for header in right.headers if header in self.headers]
 
         left_hash = self._make_hash_table(common_headers)
         right_hash = right._make_hash_table(common_headers)
 
-        for hash in left_hash:
-            pass
+        #print right_hash
+
+        final_hash = self._merge_hash_tables(left_hash, right_hash)
+
+        final_data = self._hash_to_data(final_hash)
+
+        self.data = final_data
+        self.headers = self.headers = {header: n for n, header in enumerate(list(self.data))}
 
         return self
 
@@ -305,16 +383,13 @@ def main():
 
     options = docopt.docopt(__doc__, version='0.1')  # parse options
 
-    #config_file = options['--config']
+    config_file = options['--meta']
     data_files = options['<files>']
     output_filename = options['--output']
 
     print 'Welcome to UnSoftMax me!'
-    #print 'Config file is {}'.format(config_file)
     print 'Data files are {}'.format(', '.join(data_files))
 
-    #config_table = Configuration().from_csv(config_file)
-    #print(config_table)
     all_softmax_data = []
     all_data = Table()
 
@@ -328,6 +403,27 @@ def main():
                 all_data.append(plate.data_table)
             except AttributeError:
                 pass
+
+    if config_file is not None:
+
+        print 'Config file is {}'.format(config_file)
+
+        metadata_files = []
+
+        with open(config_file, 'rU') as f:
+            c = csv.reader(f)
+            for row in c:
+                metadata_files.append(row[0])
+
+        print 'Metadata contained in {}'.format(', '.join(metadata_files))
+
+        for metadata_file in metadata_files:
+            print 'Processing {}'.format(metadata_file)
+            metadata_table = Table().from_csv(metadata_file)
+            all_data.join(metadata_table)
+
+        # config_table = Configuration().from_csv(config_file)
+        # print(config_table)
 
     print 'Writing tidy data to {}'.format(output_filename)
     all_data.to_csv(output_filename)
