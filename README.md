@@ -20,10 +20,9 @@ Options:
 --version                                           Show version number and exit
 -m <metadataFileList>, --meta <metadataFileList>    CSV with one filename per row, indicating location of metadata to join to final table
 -o <output>, --output <output>                      Filename to use for output
-<files>...                                          Data files from SoftMax in CSV or TSV format
+<files>...                                          Data files from SoftMax in CSV, TSV, or XML format
 ```
 
 ## To come
 
 * Freeze into a standalone "binary"
-* Detect XML-exported data and treat appropriately

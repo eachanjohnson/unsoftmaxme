@@ -11,12 +11,15 @@ Options:
 --version                                           Show version number and exit
 -m <metadataFileList>, --meta <metadataFileList>    CSV with one filename per row, indicating location of metadata to join to final table
 -o <output>, --output <output>                      Filename to use for output
-<files>...                                          Data files from SoftMax in CSV or TSV format
+<files>...                                          Data files from SoftMax in CSV, TSV or XML format
 '''
 
 import csv
 import docopt
 import string
+import xml.etree.ElementTree as ET
+import time
+import os.path
 
 # define classes
 
@@ -127,6 +130,7 @@ class Table(object):
         data_table['plate_name'] = [plate.name for _ in range(len(data_table['row']))]
         data_table['temperature'] = [plate.temperature for _ in range(len(data_table['row']))]
         data_table['measurement_type'] = [plate.measurement_type for _ in range(len(data_table['row']))]
+        data_table['time_stamp'] = [plate.time_stamp for _ in range(len(data_table['row']))]
 
         self.data = data_table
 
@@ -261,10 +265,11 @@ class Configuration(object):
 
 class Plate(object):
 
-    def __init__(self, name, source_filename, measurement_type, temperature):
+    def __init__(self, name, source_filename, measurement_type, temperature, time_stamp):
         self.name = name
         self.measurement_type = measurement_type
         self.temperature = temperature
+        self.time_stamp = time_stamp
         self.source_filename = source_filename
         self.dimensions = (None, None)
         self.number_of_wells = None
@@ -272,7 +277,7 @@ class Plate(object):
         self.column_names = {}
         self.row_data = {}
         table_headers = ['filename', 'plate_name', 'measurement_type',
-                         'temperature', 'row', 'row_number', 'column', 'value']
+                         'temperature', 'row', 'row_number', 'column', 'value', 'time_stamp']
         self.data_table = Table().add_headers(table_headers)
 
     def _refresh(self):
@@ -317,9 +322,29 @@ class SoftmaxData(object):
         self.filename = None
         self.plates = []
 
+    def _rowify(self, dictionary):
+
+        row_names = sorted(list(set([well[0] for well in dictionary])))
+
+        rows = []
+
+        for row_name in row_names:
+
+            wells_in_row = {well: dictionary[well] for well in dictionary if well[0] == row_name}
+            columns = sorted([int(well[1:]) for well in wells_in_row])
+
+            sorted_wells = ['{}{}'.format(row_name, column) for column in columns]
+            sorted_values = [wells_in_row[well] for well in sorted_wells]
+
+            rows.append(sorted_values)
+
+        return rows
+
     def from_csv(self, filename, plate_start='Plate:', plate_end='~End'):
 
         self.filename = filename
+        timestamp = time.ctime(os.path.getctime(filename))
+        timestamp = time.mktime(time.strptime(timestamp, '%a %b  %d %H:%M:%S %Y'))
 
         with open(filename, 'rU') as f:
             dialect = csv.Sniffer().sniff(f.read(1024))
@@ -356,10 +381,58 @@ class SoftmaxData(object):
                         elif row[1] != '' and row[1][0].isdigit():
                             current_temperature = row[1]
                             current_plate = Plate(current_plate_name, self.filename,
-                                                  current_measurement_type, current_temperature)
+                                                  current_measurement_type, current_temperature, timestamp)
                             current_plate.append_row(row[2:current_row_end_index])
                         elif row[0] != plate_start:
                             current_plate.append_row(row[2:current_row_end_index])
+
+        return self
+
+    def from_xml(self, filename):
+
+        self.filename = filename
+
+        prefix = '{http://moleculardevices.com/microplateML}'
+
+        with open(filename, 'rU') as f:
+
+            tree = ET.parse(f)
+            root = tree.getroot()
+
+            readmode_flag = './/{}readMode'.format(prefix)
+            plate_section_flag = './/{}plateSection'.format(prefix)
+            read_time_flag = './/{}plateReadTime'.format(prefix)
+            plate_section_name_flag = './/{}plateSectionName'.format(prefix)
+            raw_data_flag = './/{}rawData'.format(prefix)
+            well_flag = './/{}well'.format(prefix)
+            temperature_flag = './/{}temperatureData'.format(prefix)
+
+            print 'Parsing XML'
+
+            for plate in root.findall(plate_section_flag):
+                #print plate.find(read_time_flag)
+                try:
+                    timestamp = plate.find(read_time_flag).text.rstrip().strip()
+                except AttributeError:
+                    pass
+                else:
+                    current_timestamp = time.mktime(time.strptime(timestamp, '%I:%M %p %m/%d/%Y'))
+                    platename = plate.find(plate_section_name_flag).text
+                    platelist = ''.join(platename.split('\#'))
+                    current_plate_name = ''.join(platelist)
+                    current_measurement_type = plate.find(readmode_flag).text
+                    current_temperature = plate.find(temperature_flag).text.lower()
+
+                    current_plate = Plate(current_plate_name, self.filename,
+                                                  current_measurement_type, current_temperature, current_timestamp)
+
+                    data = {well.attrib['wellName']: well.find(raw_data_flag).text for
+                                well in plate.findall(well_flag)}
+
+                    for row in self._rowify(data):
+                        current_plate.append_row(row)
+
+                    self.plates.append(current_plate)
 
         return self
 
@@ -395,7 +468,10 @@ def main():
 
     for data_file in data_files:
         print 'Processing {}'.format(data_file)
-        softmax_data = SoftmaxData().from_csv(data_file)
+        if '.csv' in data_file or '.txt' in data_file:
+            softmax_data = SoftmaxData().from_csv(data_file)
+        elif '.xml' in data_file:
+            softmax_data = SoftmaxData().from_xml(data_file)
         all_softmax_data.append(softmax_data)
         for plate in softmax_data.plates:
             #print plate
