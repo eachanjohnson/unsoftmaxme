@@ -34,6 +34,7 @@ class Table(object):
 
     def _make_hash_table(self, header_list):
 
+        print header_list
         key_table = self.data.copy()
 
         key_table['hash'] = ['_'.join([str(key_table[header][n]) for header in sorted(header_list)]) for
@@ -141,7 +142,9 @@ class Table(object):
         self.filename = filename
 
         with open(filename, 'rU') as f:
-            c = csv.reader(f)
+            dialect = csv.Sniffer().sniff(f.read(1024))
+            f.seek(0)
+            c = csv.reader(f, dialect)
             for n, row in enumerate(c):
                 if n > 0:
                     self.add_row(row)
@@ -176,6 +179,7 @@ class Table(object):
 
     def join(self, right):
 
+        print right.headers, self.headers
         common_headers = [header for header in right.headers if header in self.headers]
 
         left_hash = self._make_hash_table(common_headers)
