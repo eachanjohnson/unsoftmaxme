@@ -34,7 +34,7 @@ class Table(object):
 
     def _make_hash_table(self, header_list):
 
-        print header_list
+        #print header_list
         key_table = self.data.copy()
 
         key_table['hash'] = ['_'.join([str(key_table[header][n]) for header in sorted(header_list)]) for
@@ -179,7 +179,7 @@ class Table(object):
 
     def join(self, right):
 
-        print right.headers, self.headers
+        #print right.headers, self.headers
         common_headers = [header for header in right.headers if header in self.headers]
 
         left_hash = self._make_hash_table(common_headers)
