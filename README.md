@@ -26,4 +26,3 @@ Options:
 ## To come
 
 * Freeze into a standalone "binary"
-* Detect XML-exported data and treat appropriately
