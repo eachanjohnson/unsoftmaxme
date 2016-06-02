@@ -381,7 +381,7 @@ class SoftmaxData(object):
                             current_row_names = [int(item) for item in row if '{}'.format(item).isdigit()]
                             #print current_row_names
                             current_row_length = max(current_row_names)
-                            current_row_end_index = current_row_length + 1
+                            current_row_end_index = current_row_length + 2
                         elif row[1] != '' and row[1][0].isdigit():
                             current_temperature = row[1]
                             current_plate = Plate(current_plate_name, self.filename,
